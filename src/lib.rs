@@ -48,6 +48,12 @@ extern "C" fn abort() -> ! {
 #[unsafe(no_mangle)]
 extern "C" fn kmain() {
     page::init();
+    page::alloc(1);
+    page::alloc(3);
+    page::alloc(2);
+    page::alloc(10);
+    page::alloc(1);
+    page::alloc(6);
     page::print_page_allocations();
 }
 
