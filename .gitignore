@@ -1,0 +1,7 @@
+/target
+
+*.un~
+*.swp
+
+os.elf
+hdd.dsk
