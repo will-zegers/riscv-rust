@@ -6,9 +6,7 @@ pub struct Uart {
 
 impl Uart {
     pub fn new(base_address: usize) -> Self {
-        Uart {
-            base_address,
-        }
+        Uart { base_address }
     }
 
     pub fn init(&mut self) {
@@ -46,7 +44,9 @@ impl Uart {
     pub fn get(&mut self) -> Option<u8> {
         let ptr = self.base_address as *mut u8;
         unsafe {
-            if ptr.add(5).read_volatile() & 1 == 0{
+            // Check if the Data Ready (DR) bit is set. Read and return the
+            // next character if so, or return None otherwise
+            if ptr.add(5).read_volatile() & 1 == 0 {
                 None
             } else {
                 Some(ptr.add(0).read_volatile())
