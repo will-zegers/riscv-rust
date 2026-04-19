@@ -1,6 +1,7 @@
-const TABLE_SIZE: usize = 512;
-
 use crate::page::{PAGE_ORDER, PAGE_SIZE, align_val, dealloc, zalloc};
+
+const TABLE_SIZE: usize = 512;
+const N_LEVELS: usize = 2;
 
 #[repr(i64)]
 #[derive(Copy, Clone)]
@@ -81,69 +82,37 @@ impl Table {
         TABLE_SIZE
     }
 
-    pub fn map(&mut self, vaddr: usize, paddr: usize, bits: i64, level: usize) {
+    pub fn map(&mut self, vaddr: usize, paddr: usize, bits: i64) {
         assert!(bits & EntryBits::ReadWriteExecute.value() != 0);
 
         let vpn = vpn_from_address(vaddr);
-        let ppn = ppn_from_address(paddr);
 
-        let mut v = &mut self.entries[vpn[2]];
-
-        for i in (level..2).rev() {
-            if !v.is_valid() {
-                let page = zalloc(1);
-
-                v.entry = (page as i64 >> 2) | EntryBits::Valid.value();
-            }
-            let entry = ((v.entry & !0x3ff) << 2) as *mut Entry;
-            v = unsafe { entry.add(vpn[i]).as_mut().unwrap() };
-        }
-
-        v.entry = (ppn[2] << 28) as i64
-            | (ppn[1] << 19) as i64
-            | (ppn[0] << 10) as i64
-            | bits
-            | EntryBits::Valid.value();
+        let entry = &mut self.entries[vpn[N_LEVELS]];
+        Table::map_rec(entry, vaddr, paddr, bits, N_LEVELS);
     }
 
-    pub fn unmap(&mut self) {
-        for i in 0..Table::len() {
-            let ref entry_lv2 = self.entries[i];
-            if entry_lv2.is_valid() && entry_lv2.is_branch() {
-                // Valid entry, so continue down to level 1 and free
-                let memaddr_lv1 = (entry_lv2.entry & !0x3ff) << 2;
-                let table_lv1 = unsafe { (memaddr_lv1 as *mut Table).as_mut().unwrap() };
-                for lv1 in 0..Table::len() {
-                    let ref entry_lv1 = table_lv1.entries[lv1];
-                    if entry_lv1.is_valid() && entry_lv1.is_branch() {
-                        let memaddr_lv0 = (entry_lv1.entry & !0x3ff) << 2;
-                        dealloc(memaddr_lv0 as *mut u8);
-                    }
-                }
-                dealloc(memaddr_lv1 as *mut u8);
-            }
-        }
-    }
+    fn map_rec(current: &mut Entry, vaddr: usize, paddr: usize, bits: i64, level: usize) {
 
-    pub fn virt_to_phys(&self, vaddr: usize, level: usize) -> Option<usize> {
+        if level == 0 {
+            let ppn = ppn_from_address(paddr);
+            current.entry = (ppn[2] << 28) as i64
+                | (ppn[1] << 19) as i64
+                | (ppn[0] << 10) as i64
+                | bits
+                | EntryBits::Valid.value();
+            return;
+        }
+
+        if !current.is_valid() {
+            let page = zalloc(1);
+
+            current.entry = (page as i64 >> 2) | EntryBits::Valid.value();
+        }
         let vpn = vpn_from_address(vaddr);
-        let mut v = &self.entries[vpn[level]];
+        let entry = ((current.entry & !0x3ff) << 2) as *mut Entry;
+        let v = unsafe { entry.add(vpn[level - 1]).as_mut().unwrap() };
 
-        for i in (0..=2).rev() {
-            if v.is_invalid() {
-                break; // page fault
-            }
-            if v.is_leaf() {
-                let offset_mask = (1 << (12 + i * 9)) - 1;
-                let vaddr_pgoff = vaddr & offset_mask;
-                let addr = ((v.entry << 2) as usize) & !offset_mask;
-                return Some(addr | vaddr_pgoff);
-            }
-
-            let entry = ((v.entry & !0x3ff) << 2) as *const Entry;
-            v = unsafe { entry.add(vpn[i - 1]).as_ref().unwrap() };
-        }
-        None
+        Table::map_rec(v, vaddr, paddr, bits, level - 1);
     }
 
     pub fn map_range(&mut self, start: usize, end: usize, bits: i64) {
@@ -151,8 +120,49 @@ impl Table {
         let num_kb_pages = (align_val(end, PAGE_ORDER) - memaddr) / PAGE_SIZE;
 
         for _ in 0..num_kb_pages {
-            self.map(memaddr, memaddr, bits, 0);
+            self.map(memaddr, memaddr, bits);
             memaddr += PAGE_SIZE;
         }
+    }
+
+    pub fn unmap(&mut self) {
+        self.unmap_rec();
+    }
+
+    fn unmap_rec(&mut self) {
+        for i in 0..Table::len() {
+            let ref entry = self.entries[i];
+            if entry.is_valid() && entry.is_branch() {
+                let memaddr = (entry.entry & !0x3ff) << 2;
+                let table = unsafe { (memaddr as *mut Table).as_mut().unwrap() };
+                table.unmap_rec();
+                dealloc(memaddr as *mut u8);
+            }
+        }
+    }
+
+    pub fn virt_to_phys(&self, vaddr: usize) -> Option<usize> {
+        let vpn = vpn_from_address(vaddr);
+        let entry = &self.entries[vpn[N_LEVELS]];
+        Table::virt_to_phys_rec(entry, vaddr, N_LEVELS)
+    }
+
+    fn virt_to_phys_rec(current: &Entry, vaddr: usize, level: usize) -> Option<usize> {
+        if current.is_leaf() {
+            let offset_mask = (1 << (12 + level * 9)) - 1;
+            let vaddr_pgoff = vaddr & offset_mask;
+            let addr = ((current.entry << 2) as usize) & !offset_mask;
+            return Some(addr | vaddr_pgoff);
+        }
+
+        if current.is_invalid() || level == 0 {
+            return None; // page fault
+        }
+
+        let vpn = vpn_from_address(vaddr);
+        let entry = ((current.entry & !0x3ff) << 2) as *const Entry;
+        let next = unsafe { entry.add(vpn[level - 1]).as_ref().unwrap() };
+
+        Table::virt_to_phys_rec(next, vaddr, level - 1)
     }
 }

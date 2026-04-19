@@ -57,7 +57,6 @@ unsafe extern "C" {
     static KERNEL_STACK_END: usize;
     static HEAP_START: usize;
     static HEAP_SIZE: usize;
-    static mut KERNEL_TABLE: usize;
 }
 
 #[unsafe(no_mangle)]
@@ -126,28 +125,24 @@ extern "C" fn kmain() {
         0x1000_0000,
         0x1000_0000,
         mmu::EntryBits::ReadWrite.value(),
-        0,
     );
     // CLINT -> MSIP
     page_table.map(
         0x0200_0000,
         0x0200_0000,
         mmu::EntryBits::ReadWrite.value(),
-        0,
     );
     // MTIMECMP
     page_table.map(
         0x0200_b000,
         0x0200_b000,
         mmu::EntryBits::ReadWrite.value(),
-        0,
     );
     // MTIME
     page_table.map(
         0x0200_c000,
         0x0200_c000,
         mmu::EntryBits::ReadWrite.value(),
-        0,
     );
     // PLIC
     page_table.map_range(
@@ -161,7 +156,11 @@ extern "C" fn kmain() {
         mmu::EntryBits::ReadWrite.value(),
     );
 
+    let p = 0x8005_7000 as usize;
+    let m = page_table.virt_to_phys(p).unwrap_or(0);
+
     page::print_page_allocations();
+    println!("Walk 0x{:x} = 0x{:x}", p, m);
 }
 
 pub mod kmem;
