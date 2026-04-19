@@ -1,12 +1,12 @@
 use core::{mem::size_of, ptr::null_mut};
 
 unsafe extern "C" {
-    static HEAP_START: usize;
-    static HEAP_SIZE: usize;
+    pub static HEAP_START: usize;
+    pub static HEAP_SIZE: usize;
 }
 
 static mut ALLOC_START: usize = 0;
-const PAGE_ORDER: usize = 12;
+pub const PAGE_ORDER: usize = 12;
 pub const PAGE_SIZE: usize = 1 << PAGE_ORDER;
 
 pub const fn align_val(val: usize, order: usize) -> usize {
@@ -70,7 +70,10 @@ pub fn init() {
             (*ptr.add(i)).clear();
         }
 
-        ALLOC_START = align_val(HEAP_START + num_pages * size_of::<PageDescriptor>(), PAGE_ORDER);
+        ALLOC_START = align_val(
+            HEAP_START + num_pages * size_of::<PageDescriptor>(),
+            PAGE_ORDER,
+        );
     }
 }
 

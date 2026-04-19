@@ -44,18 +44,127 @@ extern "C" fn abort() -> ! {
         }
     }
 }
+unsafe extern "C" {
+    static TEXT_START: usize;
+    static TEXT_END: usize;
+    static DATA_START: usize;
+    static DATA_END: usize;
+    static RODATA_START: usize;
+    static RODATA_END: usize;
+    static BSS_START: usize;
+    static BSS_END: usize;
+    static KERNEL_STACK_START: usize;
+    static KERNEL_STACK_END: usize;
+    static HEAP_START: usize;
+    static HEAP_SIZE: usize;
+    static mut KERNEL_TABLE: usize;
+}
 
 #[unsafe(no_mangle)]
 extern "C" fn kmain() {
     page::init();
-    page::alloc(1);
-    page::alloc(3);
-    page::alloc(2);
-    page::alloc(10);
-    page::alloc(1);
-    page::alloc(6);
+    kmem::init();
+
+    let page_table_ptr = kmem::get_page_table();
+    let page_table = unsafe { page_table_ptr.as_mut().unwrap() };
+    let kheap_head = kmem::get_head() as usize;
+    let total_pages = kmem::get_num_allocations();
+
+    println!();
+    println!();
+    unsafe {
+        println!("TEXT:   0x{:x} -> 0x{:x}", TEXT_START, TEXT_END);
+        println!("RODATA: 0x{:x} -> 0x{:x}", RODATA_START, RODATA_END);
+        println!("DATA:   0x{:x} -> 0x{:x}", DATA_START, DATA_END);
+        println!("BSS:    0x{:x} -> 0x{:x}", BSS_START, BSS_END);
+        println!("STACK:  0x{:x} -> 0x{:x}", KERNEL_STACK_START, KERNEL_STACK_END);
+        println!("HEAP:   0x{:x} -> 0x{:x}", kheap_head, kheap_head + total_pages * 4096);
+    }
+
+    page_table.map_range(
+        kheap_head,
+        kheap_head + total_pages * 4096,
+        mmu::EntryBits::ReadWrite.value(),
+    );
+
+    unsafe {
+        page_table.map_range(
+            HEAP_START,
+            HEAP_START + (HEAP_SIZE / page::PAGE_SIZE),
+            mmu::EntryBits::ReadWrite.value(),
+        );
+        page_table.map_range(
+            TEXT_START,
+            TEXT_END,
+            mmu::EntryBits::ReadExecute.value()
+        );
+        page_table.map_range(
+            RODATA_START,
+            RODATA_END,
+            mmu::EntryBits::ReadExecute.value(),
+        );
+        page_table.map_range(
+            DATA_START,
+            DATA_END,
+            mmu::EntryBits::ReadWrite.value()
+        );
+        page_table.map_range(
+            BSS_START,
+            BSS_END,
+            mmu::EntryBits::ReadWrite.value()
+        );
+        page_table.map_range(
+            KERNEL_STACK_START,
+            KERNEL_STACK_END,
+            mmu::EntryBits::ReadWrite.value(),
+        );
+    }
+
+    //// MMIO ////
+    // UART
+    page_table.map(
+        0x1000_0000,
+        0x1000_0000,
+        mmu::EntryBits::ReadWrite.value(),
+        0,
+    );
+    // CLINT -> MSIP
+    page_table.map(
+        0x0200_0000,
+        0x0200_0000,
+        mmu::EntryBits::ReadWrite.value(),
+        0,
+    );
+    // MTIMECMP
+    page_table.map(
+        0x0200_b000,
+        0x0200_b000,
+        mmu::EntryBits::ReadWrite.value(),
+        0,
+    );
+    // MTIME
+    page_table.map(
+        0x0200_c000,
+        0x0200_c000,
+        mmu::EntryBits::ReadWrite.value(),
+        0,
+    );
+    // PLIC
+    page_table.map_range(
+        0x0c00_0000,
+        0x0c00_2000,
+        mmu::EntryBits::ReadWrite.value(),
+    );
+    page_table.map_range(
+        0x0c20_0000,
+        0x0c20_8000,
+        mmu::EntryBits::ReadWrite.value(),
+    );
+
     page::print_page_allocations();
 }
 
+pub mod kmem;
+pub mod mmu;
 pub mod page;
 pub mod uart;
