@@ -62,12 +62,14 @@ unsafe extern "C" {
 #[unsafe(no_mangle)]
 extern "C" fn kmain() {
     page::init();
-    kmem::init();
 
+    kmem::init();
     let page_table_ptr = kmem::get_page_table();
     let page_table = unsafe { page_table_ptr.as_mut().unwrap() };
     let kheap_head = kmem::get_head() as usize;
     let total_pages = kmem::get_num_allocations();
+
+    mmu::init(page_table_ptr as usize);
 
     println!();
     println!();

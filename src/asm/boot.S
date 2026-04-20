@@ -33,14 +33,15 @@ _start:
   # Point the stack pointer to the stack segment
   la sp, _stack_end
 
-  # Set bits in the status register to enter machine protection to 3 mode and
+  # Set bits in the status register to enter machine-level protection mode and
   # enable interrupts
+  # li  t0, (0b01 << 11) | (1 << 5) | (1 << 1) # TODO: supervisor mode, once page faults are handled
   li  t0, (0b11 << 11) | (1 << 7) | (1 << 3)
   csrw mstatus, t0
 
   # Point the machine exception program counter (mepc) to point to the entry
   # point of the Rust lib module's kmain function, which is where we'll land
-  # on the mret instruction
+  # on the machine return (mret) instruction
   la  t1, kmain
   csrw mepc, t1
 
@@ -49,9 +50,9 @@ _start:
   la  t2, asm_trap_vector
   csrw mtvec, t2
 
-  # Enable software, timer, and external interrupts in the machine interrupt
-  # enable register
-  li  t3, (1 << 3) | (1 << 7) | (1 << 11)
+  # Enable machine software, timer, and external interrupts in the machine
+  # interrupt enable (mie) register
+  li  t3, (1 << 11) | (1 << 7) | (1 << 3)
   csrw mie, t3
 
   # Set the return address to wait indefinitely for interrupts
