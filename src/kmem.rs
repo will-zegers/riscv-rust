@@ -27,15 +27,19 @@ pub struct AllocList {
 
 impl AllocList {
     fn is_free(&self) -> bool {
-        self.flags_size & AllocListFlags::Taken.value() != 0
+        self.flags_size & AllocListFlags::Taken.value() == 0
+    }
+
+    fn set_free(&mut self) {
+        self.flags_size &= !AllocListFlags::Taken.value()
     }
 
     fn is_taken(&self) -> bool {
         !self.is_free()
     }
 
-    fn set_free(&mut self) {
-        self.flags_size &= !AllocListFlags::Taken.value()
+    fn set_taken(&mut self) {
+        self.flags_size |= AllocListFlags::Taken.value();
     }
 
     fn set_size(&mut self, sz: usize) {
@@ -47,11 +51,7 @@ impl AllocList {
     }
 
     fn get_size(&self) -> usize {
-        self.flags_size
-    }
-
-    fn set_taken(&mut self) {
-        self.flags_size |= AllocListFlags::Taken.value();
+        self.flags_size & !AllocListFlags::Taken.value()
     }
 }
 
@@ -173,8 +173,9 @@ fn coalesce() {
                 break;
             } else if (*head).is_free() && (*next).is_free() {
                 (*head).set_size((*head).get_size() + (*next).get_size());
-                head = (head as *mut u8).add((*head).get_size()) as *mut AllocList;
             }
+
+            head = (head as *mut u8).add((*head).get_size()) as *mut AllocList;
         }
     }
 }
