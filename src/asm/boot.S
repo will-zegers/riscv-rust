@@ -46,13 +46,14 @@ _start:
   la t1, kinit
   csrw mepc, t1
 
+  la ra, 3f
   mret
 3: # Supervisor mode
   la sp, _stack_end
 
   # Set bits in the status register to enter machine-level protection mode and
   # enable interrupts
-  li  t0, (0b01 << 11) | (1 << 7) | (1 << 3)
+  li  t0, (0b11 << 11) | (1 << 7) | (1 << 5)
   csrw mstatus, t0
 
   # Set the machine trap vector register (mtvec) to point to m_trap_vector
@@ -70,7 +71,9 @@ _start:
   csrw mepc, t1
 
   # Use mret to land on the entry point of the Rust lib
+  la ra, 5f
   mret
+
 4:# Harts with non-zero ID will be parked here
   # Give each hart a it's own slice of the stack
   la sp, _stack_end
