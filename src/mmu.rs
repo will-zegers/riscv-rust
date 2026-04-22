@@ -61,16 +61,6 @@ pub struct Table {
     pub entries: [Entry; TABLE_SIZE],
 }
 
-pub fn init(page_table_ppn: usize) {
-    // Write to the Supervisor Address Translation and Protection (satp)
-    // register to activate the MMU
-    let satp_val = 8 << 60 | page_table_ppn;
-    unsafe {
-        core::arch::asm!("csrw satp, {satp_val}", satp_val=in(reg) satp_val);
-    }
-
-}
-
 fn vpn_from_address(addr: usize) -> [usize; 3] {
     [
         (addr >> 12) & 0x1ff, // VPN[0] = vaddr[20:12]
@@ -102,7 +92,6 @@ impl Table {
     }
 
     fn map_rec(current: &mut Entry, vaddr: usize, paddr: usize, bits: i64, level: usize) {
-
         if level == 0 {
             let ppn = ppn_from_address(paddr);
             current.entry = (ppn[2] << 28) as i64

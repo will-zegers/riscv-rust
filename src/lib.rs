@@ -60,16 +60,15 @@ unsafe extern "C" {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn kmain() {
+extern "C" fn kinit() {
+    // Entry for hart with ID 0
     page::init();
-
     kmem::init();
+
     let page_table_ptr = kmem::get_page_table();
     let page_table = unsafe { page_table_ptr.as_mut().unwrap() };
     let kheap_head = kmem::get_head() as usize;
     let total_pages = kmem::get_num_allocations();
-
-    mmu::init(page_table_ptr as usize);
 
     println!();
     println!();
@@ -78,8 +77,15 @@ extern "C" fn kmain() {
         println!("RODATA: 0x{:x} -> 0x{:x}", RODATA_START, RODATA_END);
         println!("DATA:   0x{:x} -> 0x{:x}", DATA_START, DATA_END);
         println!("BSS:    0x{:x} -> 0x{:x}", BSS_START, BSS_END);
-        println!("STACK:  0x{:x} -> 0x{:x}", KERNEL_STACK_START, KERNEL_STACK_END);
-        println!("HEAP:   0x{:x} -> 0x{:x}", kheap_head, kheap_head + total_pages * 4096);
+        println!(
+            "STACK:  0x{:x} -> 0x{:x}",
+            KERNEL_STACK_START, KERNEL_STACK_END
+        );
+        println!(
+            "HEAP:   0x{:x} -> 0x{:x}",
+            kheap_head,
+            kheap_head + total_pages * 4096
+        );
     }
 
     page_table.map_range(
@@ -94,26 +100,14 @@ extern "C" fn kmain() {
             HEAP_START + (HEAP_SIZE / page::PAGE_SIZE),
             mmu::EntryBits::ReadWrite.value(),
         );
-        page_table.map_range(
-            TEXT_START,
-            TEXT_END,
-            mmu::EntryBits::ReadExecute.value()
-        );
+        page_table.map_range(TEXT_START, TEXT_END, mmu::EntryBits::ReadExecute.value());
         page_table.map_range(
             RODATA_START,
             RODATA_END,
             mmu::EntryBits::ReadExecute.value(),
         );
-        page_table.map_range(
-            DATA_START,
-            DATA_END,
-            mmu::EntryBits::ReadWrite.value()
-        );
-        page_table.map_range(
-            BSS_START,
-            BSS_END,
-            mmu::EntryBits::ReadWrite.value()
-        );
+        page_table.map_range(DATA_START, DATA_END, mmu::EntryBits::ReadWrite.value());
+        page_table.map_range(BSS_START, BSS_END, mmu::EntryBits::ReadWrite.value());
         page_table.map_range(
             KERNEL_STACK_START,
             KERNEL_STACK_END,
@@ -122,50 +116,62 @@ extern "C" fn kmain() {
     }
 
     //// MMIO ////
-    // UART
-    page_table.map(
-        0x1000_0000,
-        0x1000_0000,
-        mmu::EntryBits::ReadWrite.value(),
-    );
     // CLINT -> MSIP
-    page_table.map(
-        0x0200_0000,
-        0x0200_0000,
-        mmu::EntryBits::ReadWrite.value(),
-    );
-    // MTIMECMP
-    page_table.map(
-        0x0200_b000,
-        0x0200_b000,
-        mmu::EntryBits::ReadWrite.value(),
-    );
-    // MTIME
-    page_table.map(
-        0x0200_c000,
-        0x0200_c000,
-        mmu::EntryBits::ReadWrite.value(),
-    );
+    page_table.map_range(0x0200_0000, 0x0200_ffff, mmu::EntryBits::ReadWrite.value());
     // PLIC
-    page_table.map_range(
-        0x0c00_0000,
-        0x0c00_2000,
-        mmu::EntryBits::ReadWrite.value(),
-    );
-    page_table.map_range(
-        0x0c20_0000,
-        0x0c20_8000,
-        mmu::EntryBits::ReadWrite.value(),
-    );
+    page_table.map_range(0x0c00_0000, 0x0c00_2000, mmu::EntryBits::ReadWrite.value());
+    page_table.map_range(0x0c20_0000, 0x0c20_8000, mmu::EntryBits::ReadWrite.value());
+    // UART
+    page_table.map_range(0x1000_0000, 0x1000_0100, mmu::EntryBits::ReadWrite.value());
 
-    let p = 0x8005_7000 as usize;
-    let m = page_table.virt_to_phys(p).unwrap_or(0);
+    let satp_value = cpu::build_satp(cpu::SatpMode::Sv39, 0, page_table_ptr as usize);
+    unsafe {
+        cpu::mscratch_write((&mut cpu::KERNEL_TRAP_FRAME[0] as *mut cpu::TrapFrame) as usize);
+        cpu::sscratch_write(cpu::mscratch_read());
+        cpu::KERNEL_TRAP_FRAME[0].satp = satp_value;
 
+        cpu::KERNEL_TRAP_FRAME[0].trap_stack = page::zalloc(1).add(page::PAGE_SIZE);
+        page_table.map_range(
+            cpu::KERNEL_TRAP_FRAME[0].trap_stack.sub(page::PAGE_SIZE) as usize,
+            cpu::KERNEL_TRAP_FRAME[0].trap_stack as usize,
+            mmu::EntryBits::ReadWrite.value(),
+        );
+        page_table.map_range(
+            cpu::mscratch_read(),
+            cpu::mscratch_read() + core::mem::size_of::<cpu::TrapFrame>(),
+            mmu::EntryBits::ReadWrite.value(),
+        );
+        let p = cpu::KERNEL_TRAP_FRAME[0].trap_stack as usize - 1;
+        let m = page_table.virt_to_phys(p).unwrap_or(0);
+        println!();
+        println!("Walk 0x{:x} = 0x{:x}", p, m);
+    }
     page::print_page_allocations();
-    println!("Walk 0x{:x} = 0x{:x}", p, m);
+
+    println!("Setting 0x{:x}", satp_value);
+    println!("Scratch reg = 0x{:x}", cpu::mscratch_read());
+    cpu::satp_write(satp_value);
+    cpu::satp_fence_asid(0);
 }
 
+#[unsafe(no_mangle)]
+extern "C" fn kinit_hart(hartid: usize) {
+    //  Entry for all harts with ID non-zero
+    unsafe {
+        cpu::mscratch_write((&mut cpu::KERNEL_TRAP_FRAME[hartid] as *mut cpu::TrapFrame) as usize);
+        cpu::sscratch_write(cpu::mscratch_read());
+        cpu::KERNEL_TRAP_FRAME[hartid].hartid = hartid;
+    }
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn kmain() {
+    println!("Running in kmain.");
+}
+
+pub mod cpu;
 pub mod kmem;
 pub mod mmu;
 pub mod page;
+pub mod trap;
 pub mod uart;
