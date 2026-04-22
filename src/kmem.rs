@@ -4,7 +4,7 @@ use core::ptr::null_mut;
 use crate::mmu::Table;
 use crate::page::{PAGE_SIZE, zalloc};
 
-const N_KMEM_ALLOC: usize = 64;
+const N_KMEM_ALLOC: usize = 512;
 
 static mut KMEM_ALLOC: usize = 0;
 static mut KMEM_HEAD: *mut AllocList = null_mut();
@@ -175,6 +175,22 @@ fn coalesce() {
                 (*head).set_size((*head).get_size() + (*next).get_size());
             }
 
+            head = (head as *mut u8).add((*head).get_size()) as *mut AllocList;
+        }
+    }
+}
+
+pub fn print_table() {
+    unsafe {
+        let mut head = KMEM_HEAD;
+        let tail = (KMEM_HEAD as *mut u8).add(KMEM_ALLOC * PAGE_SIZE) as *mut AllocList;
+        while head < tail {
+            println!(
+                "{:p}: Length = {:<10} Taken = {}",
+                head,
+                (*head).get_size(),
+                (*head).is_taken()
+            );
             head = (head as *mut u8).add((*head).get_size()) as *mut AllocList;
         }
     }

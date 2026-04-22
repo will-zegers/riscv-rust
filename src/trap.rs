@@ -17,10 +17,11 @@ extern "C" fn m_trap(
         match cause_code {
             3 => println!("Machine software interrupt CPU #{}", hart),
             7 => {
-                // Machine time interrupt
+                println!("Machine timer interrupt CPU #{}", hart);
                 let mtimecmp = 0x200_4000 as *mut u64;
                 let mtime = 0x0200_bff8 as *const u64;
                 unsafe {
+                    // Reset the time to fire every 1 sec @ 10,000,000 Hz
                     mtimecmp.write_volatile(mtime.read_volatile() + 10_000_000);
                 }
             }
@@ -40,6 +41,20 @@ extern "C" fn m_trap(
             8 => {
                 println!(
                     "Environment call from User mode! CPU #{} -> 0x{:08x}",
+                    hart, epc
+                );
+                return_pc += 4;
+            }
+            5 => {
+                println!(
+                    "Load access fault! CPU #{} -> 0x{:08x}",
+                    hart, epc
+                );
+                return_pc += 4;
+            }
+            7 => {
+                println!(
+                    "Store / AMO access fault! CPU #{} -> 0x{:08x}",
                     hart, epc
                 );
                 return_pc += 4;

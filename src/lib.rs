@@ -1,4 +1,8 @@
 #![no_std]
+#![feature(alloc_error_handler)]
+
+extern crate alloc;
+use alloc::{boxed::Box, string::String};
 
 #[macro_export]
 macro_rules! print {
@@ -62,6 +66,7 @@ unsafe extern "C" {
 #[unsafe(no_mangle)]
 extern "C" fn kinit() {
     // Entry for hart with ID 0
+    uart::Uart::new(0x1000_0000).init();
     page::init();
     kmem::init();
 
@@ -166,7 +171,37 @@ extern "C" fn kinit_hart(hartid: usize) {
 
 #[unsafe(no_mangle)]
 extern "C" fn kmain() {
-    println!("Running in kmain.");
+    let _uart_dev = uart::Uart::new(0x1000_0000).init();
+
+    {
+        let box1 = Box::<u32>::new(100);
+        println!("Boxed 1 value = {}", *box1);
+
+        let long_vec = alloc::vec![0; 256];
+        let sparkle_heart = alloc::vec![240, 159, 146, 150];
+        let sparkle_heart = String::from_utf8(sparkle_heart).unwrap();
+        println!("Long vec length = {}", long_vec.len());
+        println!("String = {}", sparkle_heart);
+        println!("\n\nAllocations of a box, vector, and string");
+        kmem::print_table();
+    }
+    println!("\nEverything should now be free:");
+    kmem::print_table();
+
+    println!("\n\nTesting the timer...");
+    unsafe {
+        let mtimecmp = 0x0200_4000 as *mut u64;
+        let mtime = 0x0200_bff8 as *const u64;
+        mtimecmp.write_volatile(mtime.read_volatile() + 10_000_000);
+    }
+
+    println!("\n\nTesting access faults...");
+    unsafe {
+        let v = 0x0 as *mut u64;
+        v.write_volatile(1);
+
+        let _ = v.read_volatile();
+    }
 }
 
 pub mod cpu;
