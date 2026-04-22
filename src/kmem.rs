@@ -96,6 +96,7 @@ unsafe impl GlobalAlloc for OsGlobalAllocator {
 #[global_allocator]
 static GA: OsGlobalAllocator = OsGlobalAllocator {};
 
+#[alloc_error_handler]
 pub fn alloc_error(l: Layout) -> ! {
     panic!(
         "Allocator failed to allocate {} bytes with {}-byte alignment.",
