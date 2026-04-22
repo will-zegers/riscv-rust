@@ -1,4 +1,4 @@
-use crate::cpu::TrapFrame;
+use crate::{cpu::TrapFrame, plic, uart};
 
 #[unsafe(no_mangle)]
 extern "C" fn m_trap(
@@ -17,7 +17,6 @@ extern "C" fn m_trap(
         match cause_code {
             3 => println!("Machine software interrupt CPU #{}", hart),
             7 => {
-                println!("Machine timer interrupt CPU #{}", hart);
                 let mtimecmp = 0x200_4000 as *mut u64;
                 let mtime = 0x0200_bff8 as *const u64;
                 unsafe {
@@ -25,7 +24,27 @@ extern "C" fn m_trap(
                     mtimecmp.write_volatile(mtime.read_volatile() + 10_000_000);
                 }
             }
-            11 => println!("Machine external interrupt CPU#{}", hart),
+            11 => {
+                if let Some(interrupt) = plic::next() {
+                    match interrupt {
+                        uart::INT_ID => {
+                            let mut uart_dev = uart::Uart::new();
+                            if let Some(c) = uart_dev.get() {
+                                match c {
+                                    8 => println!("{} {}", c as char, c as char),
+                                    10 | 13 => println!(),
+                                    _ => print!("{}", c as char),
+                                }
+                            }
+                        }
+                        _ => println!(
+                            "Non-UART external interrupt CPU #{}: ID {}",
+                            hart, interrupt
+                        ),
+                    }
+                    plic::complete(interrupt);
+                }
+            }
             _ => panic!(
                 "Unhandled asynchronous trap CPU #{} -> ID {}",
                 hart, cause_code
@@ -46,17 +65,11 @@ extern "C" fn m_trap(
                 return_pc += 4;
             }
             5 => {
-                println!(
-                    "Load access fault! CPU #{} -> 0x{:08x}",
-                    hart, epc
-                );
+                println!("Load access fault! CPU #{} -> 0x{:08x}", hart, epc);
                 return_pc += 4;
             }
             7 => {
-                println!(
-                    "Store / AMO access fault! CPU #{} -> 0x{:08x}",
-                    hart, epc
-                );
+                println!("Store / AMO access fault! CPU #{} -> 0x{:08x}", hart, epc);
                 return_pc += 4;
             }
             9 => {

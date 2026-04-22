@@ -8,7 +8,7 @@ use alloc::{boxed::Box, string::String};
 macro_rules! print {
     ($($args:tt)+) => ({
         use core::fmt::Write;
-        let _ = write!(crate::uart::Uart::new(0x1000_0000), $($args)+);
+        let _ = write!(crate::uart::Uart::new(), $($args)+);
     })
 }
 
@@ -66,7 +66,7 @@ unsafe extern "C" {
 #[unsafe(no_mangle)]
 extern "C" fn kinit() {
     // Entry for hart with ID 0
-    uart::Uart::new(0x1000_0000).init();
+    uart::Uart::new().init();
     page::init();
     kmem::init();
 
@@ -171,7 +171,7 @@ extern "C" fn kinit_hart(hartid: usize) {
 
 #[unsafe(no_mangle)]
 extern "C" fn kmain() {
-    let _uart_dev = uart::Uart::new(0x1000_0000).init();
+    let _uart_dev = uart::Uart::new().init();
 
     {
         let box1 = Box::<u32>::new(100);
@@ -202,11 +202,17 @@ extern "C" fn kmain() {
 
         let _ = v.read_volatile();
     }
+
+    println!("\n\nEnabling UART interrupts in the PLIC");
+    plic::set_threshold(0);
+    plic::enable(uart::INT_ID);
+    plic::set_priority(uart::INT_ID, 1)
 }
 
 pub mod cpu;
 pub mod kmem;
 pub mod mmu;
 pub mod page;
+pub mod plic;
 pub mod trap;
 pub mod uart;

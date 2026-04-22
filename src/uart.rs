@@ -1,12 +1,17 @@
 use core::fmt::{Error, Write};
 
+pub const INT_ID: u32 = 10;
+pub const BASE_ADDRESS: usize = 0x1000_0000;
+
 pub struct Uart {
     base_address: usize,
 }
 
 impl Uart {
-    pub fn new(base_address: usize) -> Self {
-        Uart { base_address }
+    pub fn new() -> Self {
+        Uart {
+            base_address: BASE_ADDRESS,
+        }
     }
 
     pub fn init(&mut self) {
