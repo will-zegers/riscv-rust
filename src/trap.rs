@@ -1,4 +1,4 @@
-use crate::{cpu::TrapFrame, plic, uart};
+use crate::{cpu::TrapFrame, ecall, plic, uart};
 
 #[unsafe(no_mangle)]
 extern "C" fn m_trap(
@@ -7,7 +7,7 @@ extern "C" fn m_trap(
     cause: usize,
     hart: usize,
     _status: usize,
-    _frame: &mut TrapFrame,
+    frame: &mut TrapFrame,
 ) -> usize {
     let cause_code = cause & 0xfff;
     let mut return_pc = epc;
@@ -57,19 +57,16 @@ extern "C" fn m_trap(
                 "Illegal instruction CPU #{} -> 0x{:08x}: 0x{:08x}",
                 hart, epc, tval
             ),
-            8 => {
-                println!(
-                    "Environment call from User mode! CPU #{} -> 0x{:08x}",
-                    hart, epc
-                );
-                return_pc += 4;
-            }
             5 => {
                 println!("Load access fault! CPU #{} -> 0x{:08x}", hart, epc);
                 return_pc += 4;
             }
             7 => {
                 println!("Store / AMO access fault! CPU #{} -> 0x{:08x}", hart, epc);
+                return_pc += 4;
+            }
+            8 => {
+                ecall::do_ecall(epc, frame);
                 return_pc += 4;
             }
             9 => {

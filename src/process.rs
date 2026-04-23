@@ -1,5 +1,4 @@
 use alloc::collections::vec_deque::VecDeque;
-use spin::Mutex;
 
 use crate::{
     cpu,
@@ -10,7 +9,6 @@ use crate::{
 
 static mut NEXT_PID: u16 = 1;
 static mut PROCESS_LIST: Option<VecDeque<Process>> = None;
-
 
 const PROCESS_STARTING_ADDR: usize = 0x2000_0000;
 const STACK_ADDR: usize = 0x7_0000_0000;
@@ -113,18 +111,16 @@ pub fn init() -> usize {
 }
 
 fn add_process_default(func: fn()) {
-
     #![allow(static_mut_refs)]
     unsafe {
         if let Some(mut proc_list) = PROCESS_LIST.take() {
             let proc = Process::new_default(func);
-            let mut new_list = proc_list;
-            new_list.push_back(proc);
-            PROCESS_LIST.replace(new_list);
+            proc_list.push_back(proc);
+            PROCESS_LIST.replace(proc_list);
         }
     }
 }
 
-fn init_process(){
+fn init_process() {
     loop {}
 }

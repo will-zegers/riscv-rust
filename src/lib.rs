@@ -2,7 +2,6 @@
 #![feature(alloc_error_handler)]
 
 extern crate alloc;
-use alloc::{boxed::Box, string::String};
 
 #[macro_export]
 macro_rules! print {
@@ -49,18 +48,18 @@ extern "C" fn abort() -> ! {
     }
 }
 unsafe extern "C" {
-    static TEXT_START: usize;
-    static TEXT_END: usize;
-    static DATA_START: usize;
-    static DATA_END: usize;
-    static RODATA_START: usize;
-    static RODATA_END: usize;
-    static BSS_START: usize;
-    static BSS_END: usize;
-    static KERNEL_STACK_START: usize;
-    static KERNEL_STACK_END: usize;
-    static HEAP_START: usize;
-    static HEAP_SIZE: usize;
+    static _TEXT_START: usize;
+    static _TEXT_END: usize;
+    static _DATA_START: usize;
+    static _DATA_END: usize;
+    static _RODATA_START: usize;
+    static _RODATA_END: usize;
+    static _BSS_START: usize;
+    static _BSS_END: usize;
+    static _KERNEL_STACK_START: usize;
+    static _KERNEL_STACK_END: usize;
+    static _HEAP_START: usize;
+    static _HEAP_SIZE: usize;
 }
 
 #[unsafe(no_mangle)]
@@ -69,6 +68,28 @@ extern "C" fn kinit() -> usize {
     uart::Uart::new().init();
     page::init();
     kmem::init();
+
+    let page_table_ptr = kmem::get_page_table();
+    let page_table = unsafe { page_table_ptr.as_mut().unwrap() };
+
+    let satp_value = cpu::build_satp(cpu::SatpMode::Sv39, 0, page_table_ptr as usize);
+    unsafe {
+        cpu::mscratch_write((&mut cpu::KERNEL_TRAP_FRAME[0] as *mut cpu::TrapFrame) as usize);
+        cpu::sscratch_write(cpu::mscratch_read());
+        cpu::KERNEL_TRAP_FRAME[0].satp = satp_value;
+
+        cpu::KERNEL_TRAP_FRAME[0].trap_stack = page::zalloc(1).add(page::PAGE_SIZE);
+        page_table.map_range(
+            cpu::KERNEL_TRAP_FRAME[0].trap_stack.sub(page::PAGE_SIZE) as usize,
+            cpu::KERNEL_TRAP_FRAME[0].trap_stack as usize,
+            mmu::EntryBits::ReadWrite.value(),
+        );
+        page_table.map_range(
+            cpu::mscratch_read(),
+            cpu::mscratch_read() + core::mem::size_of::<cpu::TrapFrame>(),
+            mmu::EntryBits::ReadWrite.value(),
+        );
+    }
 
     let init_proc = process::init();
     println!("Init process created at address 0x{:08x}", init_proc);
@@ -99,6 +120,7 @@ extern "C" fn kinit_hart(hartid: usize) {
 }
 
 pub mod cpu;
+pub mod ecall;
 pub mod kmem;
 pub mod mmu;
 pub mod page;

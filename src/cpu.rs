@@ -1,4 +1,4 @@
-use core::ptr::null_mut;
+use core::{arch::asm, ptr::null_mut};
 
 #[repr(usize)]
 pub enum SatpMode {
@@ -34,27 +34,43 @@ pub fn build_satp(mode: SatpMode, asid: usize, addr: usize) -> usize {
     (mode as usize) << 60 | (asid & 0xfff) << 44 | (addr >> 12) & 0xff_ffff_ffff
 }
 
-pub fn mscratch_read() -> usize {
-    let val: usize;
+pub fn mepc_read() -> usize {
+    let rval: usize;
     unsafe {
-        core::arch::asm!("csrr {}, mscratch", out(reg) val);
+        asm!("csrr {}, mepc", out(reg) rval);
     }
-    val
+    rval
+}
+
+pub fn mepc_write(val: usize) {
+    unsafe {
+        asm!("csrw mepc, {}", in(reg) val);
+    }
+}
+
+pub fn mscratch_read() -> usize {
+    let rval: usize;
+    unsafe {
+        asm!("csrr {}, mscratch", out(reg) rval);
+    }
+    rval
 }
 
 pub fn mscratch_write(val: usize) {
     unsafe {
-        core::arch::asm!("csrw mscratch, {}", in(reg) val);
+        asm!("csrw mscratch, {}", in(reg) val);
     }
 }
 
 pub fn satp_fence_asid(asid: usize) {
-    unsafe { core::arch::asm!("sfence.vma zero, {}", in(reg) asid) }
+    unsafe {
+        asm!("sfence.vma zero, {}", in(reg) asid);
+    }
 }
 
 pub fn satp_write(val: usize) {
     unsafe {
-        core::arch::asm!("csrw satp, {}", in(reg) val);
+        asm!("csrw satp, {}", in(reg) val);
     }
 }
 
