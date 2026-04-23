@@ -51,9 +51,8 @@ _start:
 3: # Supervisor mode
   la sp, _stack_end
 
-  # Set bits in the status register to enter machine-level protection mode and
-  # enable interrupts
-  li  t0, (0b11 << 11) | (1 << 7) | (1 << 5)
+  # Set bits in the status register to enter use mode and enable interrupts
+  li  t0, (0b00 << 11) | (1 << 7) | (1 << 5)
   csrw mstatus, t0
 
   # Set the machine trap vector register (mtvec) to point to m_trap_vector
@@ -64,11 +63,6 @@ _start:
   # Enable machine and supervisor software, time, and external interrupts
   li t2, 0xaaa
   csrw mie, t2
-
-  # Point the machine exception program counter (mepc) to point to the entry
-  # point of the Rust lib module's kmain function
-  la  t1, kmain
-  csrw mepc, t1
 
   # Use mret to land on the entry point of the Rust lib
   la ra, 5f

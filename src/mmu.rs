@@ -1,7 +1,7 @@
 use crate::page::{PAGE_ORDER, PAGE_SIZE, align_val, dealloc, zalloc};
 
-const TABLE_SIZE: usize = 512;
-const N_LEVELS: usize = 2;
+const TABLE_SIZE: usize = 512; // Number of virtual address per table
+const N_LEVELS: usize = 2; // Number of virtual redirects until physical address
 
 #[repr(i64)]
 #[derive(Copy, Clone)]
@@ -19,6 +19,9 @@ pub enum EntryBits {
     ReadWrite = (1 << 1) | (1 << 2),
     ReadExecute = (1 << 1) | (1 << 3),
     ReadWriteExecute = (1 << 1) | (1 << 2) | (1 << 3),
+
+    UserReadWrite = (1 << 1) | (1 << 2) | (1 << 4),
+    UserReadExecute = (1 << 1) | (1 << 3) | (1 << 4),
 }
 
 impl EntryBits {
@@ -62,6 +65,8 @@ pub struct Table {
 }
 
 fn vpn_from_address(addr: usize) -> [usize; 3] {
+    // Virtual page number (VPN) is a 27-bit number given in bits 12 to 38 of
+    // the virtual address, followed by the 12-bit offset
     [
         (addr >> 12) & 0x1ff, // VPN[0] = vaddr[20:12]
         (addr >> 21) & 0x1ff, // VPN[1] = vaddr[29:21]
@@ -70,6 +75,8 @@ fn vpn_from_address(addr: usize) -> [usize; 3] {
 }
 
 fn ppn_from_address(addr: usize) -> [usize; 3] {
+    // Phyiscal page number (PPN) is a 44-bit number given in bits 12 to 55
+    // of a page table entry
     [
         (addr >> 12) & 0x1ff,      // PPN[0] = paddr[20:12]
         (addr >> 21) & 0x1ff,      // PPN[1] = paddr[29:21]

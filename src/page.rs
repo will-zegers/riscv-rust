@@ -63,6 +63,8 @@ impl PageDescriptor {
 
 pub fn init() {
     unsafe {
+        // The start of heap memory will contain PageDescriptors for each
+        // page to be allocated in memory
         let num_pages = HEAP_SIZE / PAGE_SIZE;
         let ptr = HEAP_START as *mut PageDescriptor;
 
@@ -70,6 +72,7 @@ pub fn init() {
             (*ptr.add(i)).clear();
         }
 
+        // Where allocated memory will start after the offset of PageDescriptors
         ALLOC_START = align_val(
             HEAP_START + num_pages * size_of::<PageDescriptor>(),
             PAGE_ORDER,
@@ -85,10 +88,13 @@ pub fn alloc(pages: usize) -> *mut u8 {
         for i in 0..num_pages - pages {
             let mut found = false;
 
+            // Iterate through PageDescriptors to find allocatable memory
             if (*ptr.add(i)).is_free() {
                 found = true;
                 for j in i..i + pages {
                     if (*ptr.add(j)).is_taken() {
+                        // Requested pages will not fit in this chunk.
+                        // Restart the search
                         found = false;
                         break;
                     }
@@ -96,10 +102,14 @@ pub fn alloc(pages: usize) -> *mut u8 {
             }
 
             if found {
+                // If we found a chunk of allocatable memory that can hold all
+                // requested pages, mark them as taken and return the address
+                // of the start of the allocation
                 for k in i..i + pages - 1 {
                     (*ptr.add(k)).set_flag(PageDescriptorBits::Taken)
                 }
 
+                // Mark the last page as Taken and Last
                 (*ptr.add(i + pages - 1)).set_flag(PageDescriptorBits::Taken);
                 (*ptr.add(i + pages - 1)).set_flag(PageDescriptorBits::Last);
 
@@ -111,27 +121,31 @@ pub fn alloc(pages: usize) -> *mut u8 {
 }
 
 pub fn zalloc(pages: usize) -> *mut u8 {
-    let ret = alloc(pages);
-    if !ret.is_null() {
+    // Allocate pages and zero out all bytes of memory
+    let allocated = alloc(pages);
+    if !allocated.is_null() {
         let size = (PAGE_SIZE * pages) / 8;
-        let big_ptr = ret as *mut u64;
+        let big_ptr = allocated as *mut u64;
         for i in 0..size {
             unsafe {
                 (*big_ptr.add(i)) = 0;
             }
         }
     }
-    ret
+    allocated
 }
 
 pub fn dealloc(ptr: *mut u8) {
     assert!(!ptr.is_null());
     unsafe {
+        // Calculate the starting address of memory to be deallocated
         let addr = HEAP_START + (ptr as usize - ALLOC_START) / PAGE_SIZE;
         assert!(addr >= HEAP_START && addr < HEAP_START + HEAP_SIZE);
 
         let mut p = addr as *mut PageDescriptor;
 
+        // Set all PageDescriptors up until the last of this allocation
+        // to be empty.
         while (*p).is_taken() && !(*p).is_last() {
             (*p).clear();
             p = p.add(1);

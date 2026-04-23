@@ -4,9 +4,12 @@ use core::ptr::null_mut;
 use crate::mmu::Table;
 use crate::page::{PAGE_SIZE, zalloc};
 
-const N_KMEM_ALLOC: usize = 512;
+const N_KMEM_ALLOC: usize = 512; // number of pages to allocate for the kernel
 
+// Tracks the current number of allocated pages
 static mut KMEM_ALLOC: usize = 0;
+
+// Head of the allocated memory. Starting point for searching to find a free page
 static mut KMEM_HEAD: *mut AllocList = null_mut();
 static mut KMEM_PAGE_TABLE: *mut Table = null_mut();
 
