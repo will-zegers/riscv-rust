@@ -62,6 +62,10 @@ unsafe extern "C" {
     static _HEAP_SIZE: usize;
 }
 
+unsafe extern "C" {
+    fn switch_to_user(frame: usize, mepc: usize, satp: usize) -> !;
+}
+
 #[unsafe(no_mangle)]
 extern "C" fn kinit() -> usize {
     // Entry for hart with ID 0
@@ -105,8 +109,10 @@ extern "C" fn kinit() -> usize {
         mtimecmp.write_volatile(mtime.read_volatile() + 10_000_000);
     }
     println!("Context switch timer (1 Hz) initialized");
-
-    init_proc
+    let (frame, mepc, satp) = sched::schedule();
+    unsafe {
+        switch_to_user(frame, mepc, satp);
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -126,5 +132,6 @@ pub mod mmu;
 pub mod page;
 pub mod plic;
 pub mod process;
+pub mod sched;
 pub mod trap;
 pub mod uart;

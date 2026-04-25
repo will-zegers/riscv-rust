@@ -7,8 +7,12 @@ use crate::{
     page::{PAGE_SIZE, alloc, dealloc, zalloc},
 };
 
+unsafe extern "C" {
+    fn make_ecall(a: usize) -> usize;
+}
+
 static mut NEXT_PID: u16 = 1;
-static mut PROCESS_LIST: Option<VecDeque<Process>> = None;
+pub static mut PROCESS_LIST: Option<VecDeque<Process>> = None;
 
 const PROCESS_STARTING_ADDR: usize = 0x2000_0000;
 const STACK_ADDR: usize = 0x7_0000_0000;
@@ -23,9 +27,9 @@ pub enum ProcessState {
 
 #[repr(C)]
 pub struct Process {
-    frame: TrapFrame,
+    frame: *mut TrapFrame,
     stack: *mut u8,
-    pc: usize,
+    mepc: usize,
     pid: u16,
     root: *mut Table,
     state: ProcessState,
@@ -33,26 +37,44 @@ pub struct Process {
 }
 
 impl Process {
+    pub fn get_frame_address(&self) -> usize {
+        self.frame as usize
+    }
+
+    pub fn get_program_counter(&self) -> usize {
+        self.mepc as usize
+    }
+
+    pub fn get_state(&self) ->&ProcessState {
+        &self.state
+    }
+
+    pub fn get_pid(&self) -> u16 {
+        self.pid
+    }
+
+    pub fn get_table_address(&self) -> usize {
+        self.root as usize
+    }
+
     pub fn new_default(func: fn()) -> Self {
+        let func_addr = func as usize;
         let mut proc = Process {
-            frame: TrapFrame::zero(),
+            frame: zalloc(1) as *mut TrapFrame,
             stack: alloc(STACK_PAGES),
-            pc: PROCESS_STARTING_ADDR,
+            mepc: func_addr,
             pid: unsafe { NEXT_PID },
             root: zalloc(1) as *mut Table,
-            state: ProcessState::Waiting,
+            state: ProcessState::Running,
         };
-        unsafe {
-            NEXT_PID += 1;
-        }
 
-        proc.frame.regs[2] = STACK_ADDR + PAGE_SIZE * STACK_PAGES;
         let ptable;
         unsafe {
+            NEXT_PID += 1;
+            (*proc.frame).regs[2] = STACK_ADDR + PAGE_SIZE * STACK_PAGES;
             ptable = &mut *proc.root;
         }
 
-        let func_addr = func as usize;
         let stack_addr = proc.stack as usize;
         for i in 0..STACK_PAGES {
             let addr = i * PAGE_SIZE;
@@ -63,17 +85,16 @@ impl Process {
             )
         }
 
-        // Map two pages for process instructions
-        ptable.map(
-            PROCESS_STARTING_ADDR,
-            func_addr,
-            EntryBits::UserReadExecute.value(),
-        );
-        ptable.map(
-            PROCESS_STARTING_ADDR + 0x1001,
-            func_addr + 0x1001,
-            EntryBits::UserReadExecute.value(),
-        );
+        for i in 0..=100 {
+            let modifier = i * PAGE_SIZE;
+            ptable.map(
+                func_addr + modifier,
+                func_addr + modifier,
+                EntryBits::UserReadWriteExecute.value()
+            )
+        }
+
+        ptable.map(0x8000_0000, 0x8000_0000, EntryBits::UserReadExecute.value());
 
         proc
     }
@@ -97,7 +118,7 @@ pub fn init() -> usize {
 
         let proc_list = PROCESS_LIST.take().unwrap();
         let proc = proc_list.front().unwrap().frame;
-        let frame = &proc as *const TrapFrame as usize;
+        let frame = proc as *const TrapFrame as usize;
         cpu::mscratch_write(frame);
         cpu::satp_write(cpu::build_satp(
             SatpMode::Sv39,
@@ -122,5 +143,14 @@ fn add_process_default(func: fn()) {
 }
 
 fn init_process() {
-    loop {}
+    let mut i: usize = 0;
+    loop {
+        i += 1;
+        if i > 20_000_000 {
+            unsafe {
+                make_ecall(1);
+            }
+            i = 0;
+        }
+    }
 }
